@@ -15,10 +15,10 @@ qwerky.o: qwerky.s
 	$(AS) $(ASFLAGS) -o $@ $<
 
 run: qwerky.elf
-	qemu-system-m68k -M virt -cpu m68000 -m 16M -kernel qwerky.elf -serial stdio -monitor none
+	qemu-system-m68k -M virt -cpu m68000 -m 16M -display none -serial stdio -kernel qwerky.elf
 
 debug: qwerky.elf
-	qemu-system-m68k -M virt -cpu m68000 -m 16M -kernel qwerky.elf -serial stdio -s -S &
+	qemu-system-m68k -M virt -cpu m68000 -m 16M -display none -serial stdio -kernel qwerky.elf -s -S &
 	gdb-multiarch -ex "target remote :1234" -ex "break _start" -ex "continue"
 
 clean:

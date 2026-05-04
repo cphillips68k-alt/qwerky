@@ -1,5 +1,5 @@
 | qwerkyDOS v1.0 - Motorola 68000
-| For QEMU: qemu-system-m68k -M virt -cpu m68000 -m 16M -nographic -kernel qwerky.elf
+| For QEMU: qemu-system-m68k -M virt -cpu m68000 -m 16M -kernel qwerky.elf -serial stdio
 
         .arch m68000
         .section .text
@@ -12,15 +12,14 @@
         .space  0x100-8                 | 0x008-0x0FF: Unused vectors
 
 | Goldfish TTY registers (QEMU virt machine)
-        UART_BASE   = 0xFF008000
-        UART_DATA   = UART_BASE + 0
-        UART_STATUS = UART_BASE + 4
-        UART_RX_RDY = 0x01
-        UART_TX_RDY = 0x02
+| From QEMU source: hw/goldfish_tty.c
+        UART_BASE        = 0xFF008000
+        UART_PUT_CHAR    = UART_BASE + 0x00   | Write: transmit byte, Read: receive byte
+        UART_BYTES_READY = UART_BASE + 0x04   | Read: number of bytes available
+        UART_CMD         = UART_BASE + 0x08   | Command register
 
 | Entry point
 _start:
-        | Print banner
         lea     str_banner, %a0
         bsr     print_string
         bsr     newline
@@ -63,24 +62,19 @@ newline:
 
 | Output character in D0.B to UART
 putchar:
-        movem.l %d0/%d1/%a0, -(%sp)
-        move.l  #UART_STATUS, %a0
-1:      move.b  (%a0), %d1
-        andi.b  #UART_TX_RDY, %d1
-        beq     1b
-        move.l  #UART_DATA, %a0
+        move.l  %a0, -(%sp)
+        move.l  #UART_PUT_CHAR, %a0
         move.b  %d0, (%a0)
-        movem.l (%sp)+, %d0/%d1/%a0
+        move.l  (%sp)+, %a0
         rts
 
 | Input character from UART, returns in D0.B
 getchar:
         movem.l %d1/%a0, -(%sp)
-        move.l  #UART_STATUS, %a0
+        move.l  #UART_BYTES_READY, %a0
 1:      move.b  (%a0), %d1
-        andi.b  #UART_RX_RDY, %d1
         beq     1b
-        move.l  #UART_DATA, %a0
+        move.l  #UART_PUT_CHAR, %a0
         move.b  (%a0), %d0
         movem.l (%sp)+, %d1/%a0
         rts
@@ -92,26 +86,26 @@ read_line:
         moveq   #0, %d1
 
 1:      bsr     getchar
-        cmpi.b  #0x0D, %d0             | Enter
+        cmpi.b  #0x0D, %d0
         beq     2f
         cmpi.b  #0x0A, %d0
         beq     2f
-        cmpi.b  #0x08, %d0             | Backspace
+        cmpi.b  #0x08, %d0
         beq     3f
-        cmpi.b  #0x7F, %d0             | Delete
+        cmpi.b  #0x7F, %d0
         beq     3f
-        cmpi.b  #0x20, %d0             | Printable?
+        cmpi.b  #0x20, %d0
         blo     1b
         cmpi.b  #0x7F, %d0
         bhs     1b
-        cmpi.w  #79, %d1               | Buffer full?
+        cmpi.w  #79, %d1
         bhs     1b
         move.b  %d0, (%a0)+
         addq.w  #1, %d1
         bsr     putchar
         bra     1b
 
-3:      tst.w   %d1                      | Backspace handler
+3:      tst.w   %d1
         beq     1b
         subq.w  #1, %d1
         subq.l  #1, %a0
@@ -123,7 +117,7 @@ read_line:
         bsr     putchar
         bra     1b
 
-2:      move.b  #0, (%a0)               | Null-terminate
+2:      move.b  #0, (%a0)
         movem.l (%sp)+, %d0/%d1/%a0
         rts
 
@@ -132,7 +126,6 @@ exec_command:
         movem.l %d0/%d1/%a0/%a1/%a2/%a3, -(%sp)
         lea     linebuf, %a0
 
-        | Uppercase the line
         move.l  %a0, %a1
 1:      move.b  (%a1), %d0
         beq     2f
@@ -145,34 +138,29 @@ exec_command:
 3:      addq.l  #1, %a1
         bra     1b
 2:
-        | Empty line?
         tst.b   (%a0)
         beq     cmd_exit
 
-        | Walk command table
         lea     cmd_table, %a1
 
 cmd_scan:
-        move.l  (%a1), %d0              | Handler address
-        beq     cmd_unknown             | Null = end of table
-        move.l  %a1, %a2                | Save entry start
-        addq.l  #4, %a1                 | Skip to name string
-        move.l  %a0, %a3                | linebuf pointer
+        move.l  (%a1), %d0
+        beq     cmd_unknown
+        move.l  %a1, %a2
+        addq.l  #4, %a1
+        move.l  %a0, %a3
 
-        | Compare strings
 1:      move.b  (%a1)+, %d0
-        beq     2f                      | End of table name
+        beq     2f
         cmp.b   (%a3)+, %d0
         beq     1b
-        | Mismatch - skip rest of name
 3:      tst.b   (%a1)+
         bne     3b
-        bra     cmd_scan                | Try next entry
+        bra     cmd_scan
 
-2:      tst.b   (%a3)                   | Both must end together
-        bne     3b                      | linebuf longer, mismatch
-        | Match found
-        move.l  (%a2), %a0              | Load handler address
+2:      tst.b   (%a3)
+        bne     3b
+        move.l  (%a2), %a0
         jsr     (%a0)
         bra     cmd_exit
 
@@ -254,7 +242,7 @@ cmd_table:
         .asciz  "Q"
         .long   cmd_quit
         .asciz  "QUIT"
-        .long   0                       | End marker
+        .long   0
 
 | BSS section
         .section .bss
