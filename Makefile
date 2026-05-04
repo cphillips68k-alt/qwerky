@@ -1,15 +1,14 @@
 AS      = ca65
 LD      = ld65
 
-TARGET  = sim65
-ASFLAGS = -t $(TARGET)
-LDFLAGS = -t $(TARGET) -C qwerky.cfg
+ASFLAGS = -t sim65c02
+LDFLAGS = -t sim65c02
 
 qwerky.bin: qwerky.o
-	$(LD) $(LDFLAGS) -o $@ qwerky.o
+	$(LD) $(LDFLAGS) -o $@ $< sim65c02.lib
 
-qwerky.o: qwerky.s sim65.inc
-	$(AS) $(ASFLAGS) -o qwerky.o qwerky.s
+qwerky.o: qwerky.s
+	$(AS) $(ASFLAGS) -o $@ $<
 
 run: qwerky.bin
 	sim65 qwerky.bin

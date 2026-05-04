@@ -3,6 +3,7 @@
 ; Assembler: ca65 (cc65 suite)
 
         .setcpu "65C02"
+        .export _main
         .include "sim65.inc"        ; defines SYS_PUTC, SYS_GETC, SYS_EXIT
 
 ; ---------------------------------------------------------------------------
@@ -13,9 +14,10 @@
 ; ---------------------------------------------------------------------------
 ; Reset entry point
 ; ---------------------------------------------------------------------------
+_main:
 reset:
-        sei                         ; no interrupts
-        cld                         ; binary mode always
+        sei
+        cld                        
         ldx #$FF
         txs                         ; stack = $01FF
 
