@@ -280,7 +280,7 @@ cmd_quit:
         .section .data
 
 str_banner:
-        .asciz  "\r\n+------------------------------+\r\n|                              |\r\n|   qwerkyDOS v1.0             |\r\n|   (c) 1982 qwerky Micro      |\r\n|                              |\r\n|   68000 CPU | 16MB RAM (virt)|\r\n|                              |\r\n+------------------------------+\r\n"
+        .asciz  "\r\n+------------------------------+\r\n|                              |\r\n|   qwerkyDOS v1.0             |\r\n|   (c) 2026      |\r\n|                              |\r\n|   68000 CPU | 16MB RAM (virt)|\r\n|                              |\r\n+------------------------------+\r\n"
 
 str_ready:
         .asciz  "Ready."
