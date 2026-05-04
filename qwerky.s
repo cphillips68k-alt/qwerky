@@ -1,29 +1,26 @@
-# qwerkyDOS v1.0 - Motorola 68000
-# For QEMU: qemu-system-m68k -M virt -cpu m68040 -m 16M -nographic -kernel qwerky.bin
+| qwerkyDOS v1.0 - Motorola 68000
+| For QEMU: qemu-system-m68k -M virt -cpu m68040 -m 16M -nographic -kernel qwerky.bin
 
         .section .text
         .globl  _start
 
-# Exception vector table (must be first 1024 bytes)
-# QEMU virt machine loads kernel at 0x0
+| Exception vector table (first 1024 bytes)
         .org    0x0000
-        .long   0x00100000              # 0x000: Initial SSP (stack at 1MB)
-        .long   _start                  # 0x004: Initial PC (our entry point)
-        .space  0x100-8                 # 0x008-0x0FF: Other exception vectors (unused)
+        .long   0x00100000              | 0x000: Initial SSP (stack at 1MB)
+        .long   _start                  | 0x004: Initial PC
+        .space  0x100-8                 | 0x008-0x0FF: Unused vectors
 
-# I/O addresses (QEMU virt machine)
-UART_BASE   = 0xFF000000
-UART_RHR    = UART_BASE + 0   # Receive holding register
-UART_THR    = UART_BASE + 0   # Transmit holding register
-UART_LSR    = UART_BASE + 5   # Line status register
-UART_LSR_RX = 0x01            # Data ready bit
-UART_LSR_TX = 0x20            # Transmitter empty bit
+| UART registers (QEMU virt machine)
+        UART_BASE   = 0xFF000000
+        UART_THR    = UART_BASE + 0     | Transmit holding register
+        UART_RHR    = UART_BASE + 0     | Receive holding register
+        UART_LSR    = UART_BASE + 5     | Line status register
+        UART_LSR_RX = 0x01            | Data ready bit
+        UART_LSR_TX = 0x20            | Transmitter empty bit
 
-# Entry point
+| Entry point
 _start:
-        # We're in supervisor mode, interrupts off
-        # Stack already set via vector table
-        # Print banner
+        | Print banner
         lea     str_banner, %a0
         bsr     print_string
         bsr     newline
@@ -31,10 +28,9 @@ _start:
         bsr     print_string
         bsr     newline
 
-# Main command loop
+| Main command loop
 cmd_loop:
         bsr     newline
-        # Print prompt
         move.b  #'q', %d0
         bsr     putchar
         move.b  #'>', %d0
@@ -47,90 +43,78 @@ cmd_loop:
         bsr     exec_command
         bra     cmd_loop
 
-# Print string (null-terminated) pointed to by A0
+| Print null-terminated string in A0
 print_string:
         movem.l %d0/%a0, -(%sp)
-1:
-        move.b  (%a0)+, %d0
+1:      move.b  (%a0)+, %d0
         beq     2f
         bsr     putchar
         bra     1b
-2:
-        movem.l (%sp)+, %d0/%a0
+2:      movem.l (%sp)+, %d0/%a0
         rts
 
-# Print newline (CR+LF)
+| Print newline
 newline:
-        move.l  %d0, -(%sp)
         move.b  #0x0D, %d0
         bsr     putchar
         move.b  #0x0A, %d0
         bsr     putchar
-        move.l  (%sp)+, %d0
         rts
 
-# Output character in D0.B to UART
+| Output character in D0.B to UART
 putchar:
-        move.l  %d1, -(%sp)
+        movem.l %d0/%d1/%a0, -(%sp)
         move.l  #UART_LSR, %a0
-1:
-        move.b  (%a0), %d1
+1:      move.b  (%a0), %d1
         andi.b  #UART_LSR_TX, %d1
         beq     1b
         move.l  #UART_THR, %a0
         move.b  %d0, (%a0)
-        move.l  (%sp)+, %d1
+        movem.l (%sp)+, %d0/%d1/%a0
         rts
 
-# Input character from UART, returns in D0.B
+| Input character from UART, returns in D0.B
 getchar:
+        movem.l %d1/%a0, -(%sp)
         move.l  #UART_LSR, %a0
-1:
-        move.b  (%a0), %d0
-        andi.b  #UART_LSR_RX, %d0
+1:      move.b  (%a0), %d1
+        andi.b  #UART_LSR_RX, %d1
         beq     1b
         move.l  #UART_RHR, %a0
         move.b  (%a0), %d0
+        movem.l (%sp)+, %d1/%a0
         rts
 
-# Read a line into linebuf, handle backspace
+| Read a line into linebuf
 read_line:
         movem.l %d0/%d1/%a0, -(%sp)
         lea     linebuf, %a0
-        moveq   #0, %d1                 # character count
+        moveq   #0, %d1
 
-1:
-        bsr     getchar
-        # Check for Enter
-        cmpi.b  #0x0D, %d0
+1:      bsr     getchar
+        cmpi.b  #0x0D, %d0             | Enter
         beq     2f
         cmpi.b  #0x0A, %d0
         beq     2f
-        # Check for backspace
-        cmpi.b  #0x08, %d0
+        cmpi.b  #0x08, %d0             | Backspace
         beq     3f
-        cmpi.b  #0x7F, %d0
+        cmpi.b  #0x7F, %d0             | Delete
         beq     3f
-        # Printable?
-        cmpi.b  #0x20, %d0
+        cmpi.b  #0x20, %d0             | Printable?
         blo     1b
         cmpi.b  #0x7F, %d0
         bhs     1b
-        # Buffer full? (79 chars max)
-        cmpi.w  #79, %d1
+        cmpi.w  #79, %d1               | Buffer full?
         bhs     1b
-        # Store and echo
         move.b  %d0, (%a0)+
         addq.w  #1, %d1
         bsr     putchar
         bra     1b
 
-3:
-        tst.w   %d1
+3:      tst.w   %d1                      | Backspace handler
         beq     1b
         subq.w  #1, %d1
         subq.l  #1, %a0
-        # Echo backspace-space-backspace
         move.b  #0x08, %d0
         bsr     putchar
         move.b  #0x20, %d0
@@ -139,20 +123,18 @@ read_line:
         bsr     putchar
         bra     1b
 
-2:
-        move.b  #0, (%a0)
+2:      move.b  #0, (%a0)               | Null-terminate
         movem.l (%sp)+, %d0/%d1/%a0
         rts
 
-# Command execution
+| Execute command in linebuf
 exec_command:
-        movem.l %d0/%d1/%a0/%a1, -(%sp)
+        movem.l %d0/%d1/%a0/%a1/%a2/%a3, -(%sp)
         lea     linebuf, %a0
 
-        # Uppercase the line
+        | Uppercase the line
         move.l  %a0, %a1
-1:
-        move.b  (%a1), %d0
+1:      move.b  (%a1), %d0
         beq     2f
         cmpi.b  #'a', %d0
         blo     3f
@@ -160,52 +142,37 @@ exec_command:
         bhs     3f
         subi.b  #0x20, %d0
         move.b  %d0, (%a1)
-3:
-        addq.l  #1, %a1
+3:      addq.l  #1, %a1
         bra     1b
 2:
-
-        # Empty line?
+        | Empty line?
         tst.b   (%a0)
         beq     cmd_exit
 
-        # Walk command table
+        | Walk command table
         lea     cmd_table, %a1
 
 cmd_scan:
-        # Check end of table (null name)
-        move.w  (%a1), %d0
-        beq     cmd_unknown
-        # %a1 points to handler address (4 bytes) + name string
-        # Compare strings
-        move.l  %a1, %a2                # save entry start
-        addq.l  #4, %a1                 # skip handler address
-        move.l  %a0, %a3                # linebuf pointer
-1:
-        move.b  (%a1)+, %d0
-        beq     2f                      # end of table name
+        move.l  (%a1), %d0              | Handler address
+        beq     cmd_unknown             | Null = end of table
+        move.l  %a1, %a2                | Save entry start
+        addq.l  #4, %a1                 | Skip to name string
+        move.l  %a0, %a3                | linebuf pointer
+
+        | Compare strings
+1:      move.b  (%a1)+, %d0
+        beq     2f                      | End of table name
         cmp.b   (%a3)+, %d0
         beq     1b
-        bra     3f
+        | Mismatch - skip rest of name
+3:      tst.b   (%a1)+
+        bne     3b
+        bra     cmd_scan                | Try next entry
 
-2:
-        tst.b   (%a3)
-        beq     cmd_match               # both ended = match
-
-3:
-        # Skip remaining name bytes
-1:
-        tst.b   (%a1)+
-        bne     1b
-        # %a1 now points to next entry
-        move.l  %a1, %a2                # check if next entry exists
-        move.w  (%a2), %d0
-        bne     cmd_scan
-        bra     cmd_unknown
-
-cmd_match:
-        move.l  %a2, %a1
-        move.l  (%a1), %a0              # load handler address
+2:      tst.b   (%a3)                   | Both must end together
+        bne     3b                      | linebuf longer, mismatch
+        | Match found
+        move.l  (%a2), %a0              | Load handler address
         jsr     (%a0)
         bra     cmd_exit
 
@@ -214,10 +181,10 @@ cmd_unknown:
         bsr     print_string
 
 cmd_exit:
-        movem.l (%sp)+, %d0/%d1/%a0/%a1
+        movem.l (%sp)+, %d0/%d1/%a0/%a1/%a2/%a3
         rts
 
-# Command handlers
+| Command handlers
 cmd_help:
         lea     str_help, %a0
         bsr     print_string
@@ -225,8 +192,7 @@ cmd_help:
 
 cmd_cls:
         moveq   #25, %d0
-1:
-        bsr     newline
+1:      bsr     newline
         subq.b  #1, %d0
         bne     1b
         rts
@@ -247,11 +213,10 @@ cmd_ver:
         rts
 
 cmd_quit:
-        # Halt the CPU
         stop    #0x2700
         rts
 
-# Data
+| Data strings
         .section .data
 
 str_banner:
@@ -267,14 +232,13 @@ str_help:
         .asciz  "Commands: HELP, CLS, BEEP, MEM, VER, Q\r\n"
 
 str_mem:
-        .asciz  "Free: about 16MB. It's 2026, not 1982.\r\n"
+        .asciz  "Free: about 16MB. It's 2024, not 1982.\r\n"
 
 str_ver:
-        .asciz  "qwerkyDOS v1.0   (c) 2026 qwerky\r\n"
+        .asciz  "qwerkyDOS v1.0   (c) 1982 qwerky Micro\r\n"
 
-# Command table: 4-byte handler address + null-terminated name
+| Command table: 4-byte handler address + null-terminated name
         .section .rodata
-        .even
 cmd_table:
         .long   cmd_help
         .asciz  "HELP"
@@ -290,9 +254,9 @@ cmd_table:
         .asciz  "Q"
         .long   cmd_quit
         .asciz  "QUIT"
-        .long   0                       # end marker
+        .long   0                       | End marker
 
-# BSS (uninitialized data)
+| BSS section
         .section .bss
 linebuf:
         .space  80
