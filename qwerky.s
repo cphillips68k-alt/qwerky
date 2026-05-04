@@ -1,6 +1,7 @@
 | qwerkyDOS v1.0 - Motorola 68000
-| For QEMU: qemu-system-m68k -M virt -cpu m68040 -m 16M -nographic -kernel qwerky.bin
+| For QEMU: qemu-system-m68k -M virt -cpu m68000 -m 16M -nographic -kernel qwerky.elf
 
+        .arch m68000
         .section .text
         .globl  _start
 
@@ -10,13 +11,12 @@
         .long   _start                  | 0x004: Initial PC
         .space  0x100-8                 | 0x008-0x0FF: Unused vectors
 
-| UART registers (QEMU virt machine)
-        UART_BASE   = 0xFF000000
-        UART_THR    = UART_BASE + 0     | Transmit holding register
-        UART_RHR    = UART_BASE + 0     | Receive holding register
-        UART_LSR    = UART_BASE + 5     | Line status register
-        UART_LSR_RX = 0x01            | Data ready bit
-        UART_LSR_TX = 0x20            | Transmitter empty bit
+| Goldfish TTY registers (QEMU virt machine)
+        UART_BASE   = 0xFF008000
+        UART_DATA   = UART_BASE + 0
+        UART_STATUS = UART_BASE + 4
+        UART_RX_RDY = 0x01
+        UART_TX_RDY = 0x02
 
 | Entry point
 _start:
@@ -64,11 +64,11 @@ newline:
 | Output character in D0.B to UART
 putchar:
         movem.l %d0/%d1/%a0, -(%sp)
-        move.l  #UART_LSR, %a0
+        move.l  #UART_STATUS, %a0
 1:      move.b  (%a0), %d1
-        andi.b  #UART_LSR_TX, %d1
+        andi.b  #UART_TX_RDY, %d1
         beq     1b
-        move.l  #UART_THR, %a0
+        move.l  #UART_DATA, %a0
         move.b  %d0, (%a0)
         movem.l (%sp)+, %d0/%d1/%a0
         rts
@@ -76,11 +76,11 @@ putchar:
 | Input character from UART, returns in D0.B
 getchar:
         movem.l %d1/%a0, -(%sp)
-        move.l  #UART_LSR, %a0
+        move.l  #UART_STATUS, %a0
 1:      move.b  (%a0), %d1
-        andi.b  #UART_LSR_RX, %d1
+        andi.b  #UART_RX_RDY, %d1
         beq     1b
-        move.l  #UART_RHR, %a0
+        move.l  #UART_DATA, %a0
         move.b  (%a0), %d0
         movem.l (%sp)+, %d1/%a0
         rts
